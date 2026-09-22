@@ -31,10 +31,21 @@ class TngHeatTempNumber(CoordinatorEntity[TngCoordinator], NumberEntity):
         self._entry = entry
         self._pending = False
         self._attr_unique_id = f"{entry.data[CONF_HEAT_PUMP_HASH]}_heat_temp"
+        self._optimistic_value: float | None = None
 
     @property
     def available(self) -> bool:
         return super().available and not self._pending
+
+    def _handle_coordinator_update(self) -> None:
+        # Jakmile skutečná data ze serveru dohoní naši optimistickou
+        # hodnotu (čerpadlo si vyzvedlo a potvrdilo nové nastavení),
+        # přestaneme ji vnucovat a necháme mluvit real data.
+        if self._optimistic_value is not None:
+            real = self.coordinator.data.get("CurrentHeatingWaterTemp")
+            if real is not None and int(real) == int(self._optimistic_value):
+                self._optimistic_value = None
+        super()._handle_coordinator_update()
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -47,10 +58,13 @@ class TngHeatTempNumber(CoordinatorEntity[TngCoordinator], NumberEntity):
 
     @property
     def native_value(self) -> float | None:
+        if self._optimistic_value is not None:
+            return self._optimistic_value
         return self.coordinator.data.get("CurrentHeatingWaterTemp")
 
     async def async_set_native_value(self, value: float) -> None:
         self._pending = True
+        self._optimistic_value = value
         self.async_write_ha_state()
         try:
             await self.coordinator.async_write_settings(heat_temp_const=int(round(value)))
