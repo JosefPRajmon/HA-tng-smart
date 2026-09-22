@@ -11,7 +11,7 @@ from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
 from homeassistant.data_entry_flow import FlowResult
 
 from .api import TngApiClient, TngAuthError, TngApiError
-from .const import CONF_HEAT_PUMP_HASH, CONF_DESCRIPTION, DOMAIN
+from .const import CONF_HEAT_PUMP_HASH, CONF_DESCRIPTION, CONF_MAC_ADDRESS, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +30,7 @@ class TngConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._username: str | None = None
         self._password: str | None = None
         self._installations: list = []
+        self._chosen_installation = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -55,7 +56,8 @@ class TngConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 self._installations = installations
                 if len(installations) == 1:
-                    return await self._finish(installations[0])
+                    self._chosen_installation = installations[0]
+                    return await self.async_step_mac_address()
                 if len(installations) > 1:
                     return await self.async_step_pick_installation()
                 errors["base"] = "no_installations"
@@ -79,15 +81,30 @@ class TngConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             chosen_hash = user_input[CONF_HEAT_PUMP_HASH]
-            chosen = next(
+            self._chosen_installation = next(
                 i for i in self._installations if i.heat_pump_hash == chosen_hash
             )
-            return await self._finish(chosen)
+            return await self.async_step_mac_address()
 
         schema = vol.Schema({vol.Required(CONF_HEAT_PUMP_HASH): vol.In(options)})
         return self.async_show_form(step_id="pick_installation", data_schema=schema)
 
-    async def _finish(self, installation) -> FlowResult:
+    async def async_step_mac_address(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            return await self._finish(
+                self._chosen_installation, user_input[CONF_MAC_ADDRESS]
+            )
+
+        schema = vol.Schema({vol.Required(CONF_MAC_ADDRESS): str})
+        return self.async_show_form(
+            step_id="mac_address", data_schema=schema, errors=errors
+        )
+
+    async def _finish(self, installation, mac_address: str) -> FlowResult:
         await self.async_set_unique_id(installation.heat_pump_hash)
         self._abort_if_unique_id_configured()
 
@@ -97,6 +114,7 @@ class TngConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_USERNAME: self._username,
                 CONF_PASSWORD: self._password,
                 CONF_HEAT_PUMP_HASH: installation.heat_pump_hash,
+                CONF_MAC_ADDRESS: mac_address.strip(),
                 CONF_DESCRIPTION: installation.description,
             },
         )

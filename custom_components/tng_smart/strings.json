@@ -13,6 +13,13 @@
         "data": {
           "heat_pump_hash": "Tepelné čerpadlo"
         }
+      },
+      "mac_address": {
+        "title": "MAC adresa čerpadla",
+        "description": "Najdeš ji v odkaze na data čerpadla na tngsmart.cz, nebo ji zjistíš z technika/dokumentace.",
+        "data": {
+          "mac_address": "MAC adresa (např. 801F12394766)"
+        }
       }
     },
     "error": {

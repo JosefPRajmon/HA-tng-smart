@@ -194,6 +194,60 @@ class TngApiClient:
             "nalezena."
         )
 
+    def write_settings(
+        self,
+        heat_pump_hash: str,
+        mac_address: str,
+        heat_on: bool,
+        heat_temp_const: int,
+        boiler_on: bool,
+        boiler_temp: int,
+        pool_on: bool = False,
+        pool_temp: int = 37,
+    ) -> None:
+        """Zapíše základní nastavení. Regulace/LeadingThermostat/EquitCurve
+        a vlastní ekvitermní křivka jsou napevno podle aktuálního nastavení
+        účtu (Termostat TnG RF, křivka č. 4) - dokud neumíme spolehlivě
+        přečíst plný stav z MyInstallations, měnit je odsud neumíme."""
+        self._ensure_login()
+
+        packet = {
+            "HeatSet": {
+                "Heat": heat_on,
+                "HeatingMode": 0,
+                "EquitCurve": 4,
+                "Boost": False,
+                "EmergencyMode": False,
+                "ExtendedHeatSet": {"Regulation": 3, "LeadingThermostat": 1},
+            },
+            "HeatTemp_Const": heat_temp_const,
+            "HeatTempEqCustom_P20": 34,
+            "HeatTempEqCustom_P10": 38,
+            "HeatTempEqCustom_P0": 42,
+            "HeatTempEqCustom_M10": 46,
+            "HeatTempEqCustom_M20": 50,
+            "BoilerSet": {"Boiler": boiler_on, "Boost": False, "Sensor": False},
+            "BoilerTemp": boiler_temp,
+            "PoolSet": {"Pool": pool_on, "Boost": False},
+            "PoolTemp": pool_temp,
+            "AccSecure": True,
+        }
+
+        if not self._auth_ids or not self._auth_ids.get("UserId"):
+            raise TngApiError(
+                "Chybí přihlašovací identifikátory (UserId/UserIdHash) - "
+                "nejdřív se musí povést alespoň jedno čtení stavu."
+            )
+
+        url = (
+            f"{BASE_URL}/api/HeatPumpInsertBasicSettings_v3/"
+            f"{self._auth_ids['UserId']}-{heat_pump_hash}-{mac_address}-"
+            f"{self._auth_ids['UserName']}-{self._auth_ids['UserIdHash']}"
+        )
+
+        r = self._session.post(url, json=packet, timeout=15)
+        r.raise_for_status()
+
     def get_status(self, heat_pump_hash: str) -> dict:
         self._ensure_login()
         self._ensure_crossroad_visited()
