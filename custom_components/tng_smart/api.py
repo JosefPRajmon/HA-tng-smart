@@ -220,11 +220,31 @@ class TngApiClient:
         r = self._session.get(url, timeout=15)
         r.raise_for_status()
 
+        # Endpoint umí vracet JSON i XML podle Accept hlavičky/klienta -
+        # naše requests session dostává JSON, tak ho zkusíme první.
+        try:
+            payload = r.json()
+            points = payload.get("First") or []
+            if not points:
+                _LOGGER.debug("HeatPumpData (JSON) nevrátilo žádné body.")
+                return None
+            latest = points[-1]
+            result: dict = {}
+            for key in ("t", "tb", "tt", "tw"):
+                val = latest.get(key)
+                if val is not None:
+                    result[key] = val / 10.0
+            result["time"] = latest.get("time")
+            return result
+        except (ValueError, AttributeError):
+            pass  # není to JSON, zkusíme XML níže
+
         try:
             root = ET.fromstring(r.text)
         except ET.ParseError:
             _LOGGER.debug(
-                "Nepodařilo se naparsovat XML z HeatPumpData: %s",
+                "Nepodařilo se naparsovat HeatPumpData ani jako JSON, ani "
+                "jako XML: %s",
                 r.text[:300],
             )
             return None
@@ -265,6 +285,11 @@ class TngApiClient:
         účtu (Termostat TnG RF, křivka č. 4) - dokud neumíme spolehlivě
         přečíst plný stav z MyInstallations, měnit je odsud neumíme."""
         self._ensure_login()
+
+        # Server chce MAC jako holý hex řetězec bez dvojteček/pomlček -
+        # očistíme i tady pro jistotu (kdyby konfigurace obsahovala starší,
+        # neočištěný formát).
+        mac_address = re.sub(r"[^0-9A-Fa-f]", "", mac_address).upper()
 
         packet = {
             "HeatSet": {

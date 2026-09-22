@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -108,13 +109,16 @@ class TngConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(installation.heat_pump_hash)
         self._abort_if_unique_id_configured()
 
+        # Server chce MAC bez dvojteček/pomlček/mezer (holý hex řetězec).
+        normalized_mac = re.sub(r"[^0-9A-Fa-f]", "", mac_address).upper()
+
         return self.async_create_entry(
             title=installation.description or "TnG Smart",
             data={
                 CONF_USERNAME: self._username,
                 CONF_PASSWORD: self._password,
                 CONF_HEAT_PUMP_HASH: installation.heat_pump_hash,
-                CONF_MAC_ADDRESS: mac_address.strip(),
+                CONF_MAC_ADDRESS: normalized_mac,
                 CONF_DESCRIPTION: installation.description,
             },
         )
