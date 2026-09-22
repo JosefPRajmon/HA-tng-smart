@@ -29,7 +29,12 @@ class TngHeatTempNumber(CoordinatorEntity[TngCoordinator], NumberEntity):
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):
         super().__init__(coordinator)
         self._entry = entry
+        self._pending = False
         self._attr_unique_id = f"{entry.data[CONF_HEAT_PUMP_HASH]}_heat_temp"
+
+    @property
+    def available(self) -> bool:
+        return super().available and not self._pending
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -45,4 +50,10 @@ class TngHeatTempNumber(CoordinatorEntity[TngCoordinator], NumberEntity):
         return self.coordinator.data.get("CurrentHeatingWaterTemp")
 
     async def async_set_native_value(self, value: float) -> None:
-        await self.coordinator.async_write_settings(heat_temp_const=int(round(value)))
+        self._pending = True
+        self.async_write_ha_state()
+        try:
+            await self.coordinator.async_write_settings(heat_temp_const=int(round(value)))
+        finally:
+            self._pending = False
+            self.async_write_ha_state()

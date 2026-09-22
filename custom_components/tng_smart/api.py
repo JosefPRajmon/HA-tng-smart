@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 import requests
@@ -185,6 +187,13 @@ class TngApiClient:
         raw = re.sub(r'"\\/Date\((-?\d+)\)\\/"', r"\1", m.group(1))
         items = json.loads(raw)
 
+        if not self._auth_ids or not self._auth_ids.get("UserId"):
+            self._auth_ids = {
+                "UserId": self._extract_js_var(r.text, "UserId"),
+                "UserName": self._extract_js_var(r.text, "UserName", string=True),
+                "UserIdHash": self._extract_js_var(r.text, "UserIdHash", string=True),
+            }
+
         for item in items:
             if item.get("HeatPumpHash") == heat_pump_hash:
                 return item
@@ -193,6 +202,52 @@ class TngApiClient:
             f"Instalace s hashem {heat_pump_hash} nebyla na CrossRoad "
             "nalezena."
         )
+
+    def get_latest_data_point(self, heat_pump_hash: str, minutes: int = 15) -> dict | None:
+        """Vrátí poslední naměřený bod z /api/HeatPumpData/ - skutečné
+        aktuální teploty (na rozdíl od CrossRoad, kde CurrentHeatingWaterTemp
+        je nastavená/cílová hodnota, ne reálně měřená). URL má formát
+        {hash}-{fromMs}-{toMs}-{0} - fromMs/toMs jsou unix časy v ms,
+        poslední 0 je nejspíš "bez agregace".
+        Vrací dict {"t": venkovní, "tb": bojler, "tt": místnost,
+        "tw": voda na výstupu} v °C (float), nebo None, pokud selže."""
+        self._ensure_login()
+
+        to_ms = int(time.time() * 1000)
+        from_ms = to_ms - minutes * 60 * 1000
+        url = f"{BASE_URL}/api/HeatPumpData/{heat_pump_hash}-{from_ms}-{to_ms}-0"
+
+        r = self._session.get(url, timeout=15)
+        r.raise_for_status()
+
+        try:
+            root = ET.fromstring(r.text)
+        except ET.ParseError:
+            _LOGGER.debug(
+                "Nepodařilo se naparsovat XML z HeatPumpData: %s",
+                r.text[:300],
+            )
+            return None
+
+        points = [el for el in root.iter() if el.tag.split("}")[-1] == "HeatPumpDataShort"]
+        if not points:
+            _LOGGER.debug("HeatPumpData nevrátilo žádné body pro dané okno.")
+            return None
+
+        latest = points[-1]
+        raw = {child.tag.split("}")[-1]: child.text for child in latest}
+
+        result: dict = {}
+        for key in ("t", "tb", "tt", "tw"):
+            val = raw.get(key)
+            if val is None:
+                continue
+            try:
+                result[key] = int(val) / 10.0
+            except ValueError:
+                pass
+        result["time"] = raw.get("time")
+        return result
 
     def write_settings(
         self,
@@ -246,6 +301,11 @@ class TngApiClient:
         )
 
         r = self._session.post(url, json=packet, timeout=15)
+        _LOGGER.debug(
+            "write_settings POST %s -> status %s, tělo odpovědi: %r, "
+            "odeslaný packet: %s",
+            url, r.status_code, r.text[:500], packet,
+        )
         r.raise_for_status()
 
     def get_status(self, heat_pump_hash: str) -> dict:

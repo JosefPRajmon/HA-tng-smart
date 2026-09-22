@@ -24,14 +24,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator: TngCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     entities: list[SensorEntity] = [
-        TngTempSensor(coordinator, entry, "Venkovní teplota", "outside_air", "AirTemperature"),
-        TngTempSensor(coordinator, entry, "Teplota vody na výstupu", "water_out", "CurrentHeatingWaterTemp"),
-        TngTempSensor(coordinator, entry, "Teplota v bojleru", "boiler_temp", "CurrentBoilerTemp"),
+        TngTempSensor(coordinator, entry, "Venkovní teplota", "outside_air",
+                      ["LiveOutsideTemp", "AirTemperature"]),
+        TngTempSensor(coordinator, entry, "Teplota vody na výstupu", "water_out",
+                      ["LiveWaterTemp", "CurrentHeatingWaterTemp"]),
+        TngTempSensor(coordinator, entry, "Teplota v bojleru", "boiler_temp",
+                      ["LiveBoilerTemp", "CurrentBoilerTemp"]),
     ]
 
     if coordinator.data.get("ThermostatId"):
         entities.append(
-            TngTempSensor(coordinator, entry, "Teplota v místnosti", "room_temp", "RoomTemperature")
+            TngTempSensor(coordinator, entry, "Teplota v místnosti", "room_temp",
+                          ["LiveRoomTemp", "RoomTemperature"])
         )
 
     async_add_entities(entities)
@@ -44,10 +48,10 @@ class TngTempSensor(CoordinatorEntity[TngCoordinator], SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry,
-                 name: str, key: str, data_field: str):
+                 name: str, key: str, data_fields: list[str]):
         super().__init__(coordinator)
         self._entry = entry
-        self._data_field = data_field
+        self._data_fields = data_fields
         self._attr_name = name
         self._attr_unique_id = f"{entry.data[CONF_HEAT_PUMP_HASH]}_{key}"
 
@@ -62,7 +66,8 @@ class TngTempSensor(CoordinatorEntity[TngCoordinator], SensorEntity):
 
     @property
     def native_value(self) -> float | None:
-        value = self.coordinator.data.get(self._data_field)
-        if value is None or value <= _NO_DATA_SENTINEL:
-            return None
-        return value
+        for field in self._data_fields:
+            value = self.coordinator.data.get(field)
+            if value is not None and value > _NO_DATA_SENTINEL:
+                return value
+        return None

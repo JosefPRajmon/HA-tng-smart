@@ -28,7 +28,7 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
 
     async def _async_update_data(self) -> dict:
         try:
-            return await self.hass.async_add_executor_job(
+            status = await self.hass.async_add_executor_job(
                 self.client.get_installation_status, self.heat_pump_hash
             )
         except TngAuthError as err:
@@ -37,6 +37,28 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
             raise UpdateFailed(f"Chyba API: {err}") from err
         except Exception as err:  # noqa: BLE001
             raise UpdateFailed(f"Neočekávaná chyba: {err}") from err
+
+        # Živá data (skutečně měřené teploty) - nekritické, pokud selžou,
+        # necháme jen fallback na hodnoty z CrossRoad.
+        try:
+            live = await self.hass.async_add_executor_job(
+                self.client.get_latest_data_point, self.heat_pump_hash
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Nepodařilo se načíst živá data: %s", err)
+            live = None
+
+        if live:
+            if "t" in live:
+                status["LiveOutsideTemp"] = live["t"]
+            if "tt" in live:
+                status["LiveRoomTemp"] = live["tt"]
+            if "tw" in live:
+                status["LiveWaterTemp"] = live["tw"]
+            if "tb" in live:
+                status["LiveBoilerTemp"] = live["tb"]
+
+        return status
 
     def current_write_kwargs(self) -> dict:
         """Poskládá výchozí hodnoty pro zápis z posledního známého stavu -

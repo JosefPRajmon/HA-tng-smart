@@ -27,6 +27,20 @@ class _TngSwitchBase(CoordinatorEntity[TngCoordinator], SwitchEntity):
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):
         super().__init__(coordinator)
         self._entry = entry
+        self._pending = False
+
+    @property
+    def available(self) -> bool:
+        return super().available and not self._pending
+
+    async def _do_write(self, **kwargs) -> None:
+        self._pending = True
+        self.async_write_ha_state()
+        try:
+            await self.coordinator.async_write_settings(**kwargs)
+        finally:
+            self._pending = False
+            self.async_write_ha_state()
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -50,10 +64,10 @@ class TngHeatSwitch(_TngSwitchBase):
         return bool(self.coordinator.data.get("HeatingOn"))
 
     async def async_turn_on(self, **kwargs) -> None:
-        await self.coordinator.async_write_settings(heat_on=True)
+        await self._do_write(heat_on=True)
 
     async def async_turn_off(self, **kwargs) -> None:
-        await self.coordinator.async_write_settings(heat_on=False)
+        await self._do_write(heat_on=False)
 
 
 class TngBoilerSwitch(_TngSwitchBase):
@@ -68,7 +82,7 @@ class TngBoilerSwitch(_TngSwitchBase):
         return bool(self.coordinator.data.get("BoilerOn"))
 
     async def async_turn_on(self, **kwargs) -> None:
-        await self.coordinator.async_write_settings(boiler_on=True)
+        await self._do_write(boiler_on=True)
 
     async def async_turn_off(self, **kwargs) -> None:
-        await self.coordinator.async_write_settings(boiler_on=False)
+        await self._do_write(boiler_on=False)
