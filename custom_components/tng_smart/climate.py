@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from homeassistant.components.climate import (
     ClimateEntity,
@@ -14,7 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_HEAT_PUMP_HASH, DOMAIN, MAX_HEAT_TEMP, MIN_HEAT_TEMP
+from .const import CONF_HEAT_PUMP_HASH, DOMAIN, MAX_HEAT_TEMP, MIN_HEAT_TEMP, OPTIMISTIC_TTL_SECONDS
 from .coordinator import TngCoordinator
 
 # Než reálně odešleme novou teplotu, počkáme chvíli - když někdo rychle
@@ -46,7 +47,9 @@ class TngHeatClimate(CoordinatorEntity[TngCoordinator], ClimateEntity):
         # věříme tomu, co jsme sami odeslali, místo abychom blikali zpátky
         # na starou hodnotu kvůli zpoždění na straně čerpadla.
         self._optimistic_hvac_mode: HVACMode | None = None
+        self._optimistic_hvac_mode_set_at: float = 0.0
         self._optimistic_temp: float | None = None
+        self._optimistic_temp_set_at: float = 0.0
         self._temp_debounce_task: asyncio.Task | None = None
 
     @property
@@ -60,13 +63,15 @@ class TngHeatClimate(CoordinatorEntity[TngCoordinator], ClimateEntity):
 
     @property
     def hvac_mode(self) -> HVACMode:
-        if self._optimistic_hvac_mode is not None:
+        if (self._optimistic_hvac_mode is not None
+                and time.monotonic() - self._optimistic_hvac_mode_set_at < OPTIMISTIC_TTL_SECONDS):
             return self._optimistic_hvac_mode
         return HVACMode.HEAT if self.coordinator.data.get("HeatingOn") else HVACMode.OFF
 
     @property
     def target_temperature(self) -> float | None:
-        if self._optimistic_temp is not None:
+        if (self._optimistic_temp is not None
+                and time.monotonic() - self._optimistic_temp_set_at < OPTIMISTIC_TTL_SECONDS):
             return self._optimistic_temp
         return self.coordinator.data.get("CurrentHeatingWaterTemp")
 
@@ -89,6 +94,7 @@ class TngHeatClimate(CoordinatorEntity[TngCoordinator], ClimateEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         self._optimistic_hvac_mode = hvac_mode
+        self._optimistic_hvac_mode_set_at = time.monotonic()
         self.async_write_ha_state()
         await self.coordinator.async_write_settings(heat_on=(hvac_mode == HVACMode.HEAT))
 
@@ -98,6 +104,7 @@ class TngHeatClimate(CoordinatorEntity[TngCoordinator], ClimateEntity):
             return
 
         self._optimistic_temp = temperature
+        self._optimistic_temp_set_at = time.monotonic()
         self.async_write_ha_state()
 
         if self._temp_debounce_task:

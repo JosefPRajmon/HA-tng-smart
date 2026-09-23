@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
+import time
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import TngApiClient, TngApiError, TngAuthError
-from .const import DOMAIN, UPDATE_INTERVAL_SECONDS, DEFAULT_THERMOSTAT_SCHEDULE
+from .const import DOMAIN, UPDATE_INTERVAL_SECONDS, DEFAULT_THERMOSTAT_SCHEDULE, OPTIMISTIC_TTL_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
                     real = thermo.get(data_key)
                     if real is None:
                         continue
-                    override = self.thermostat_overrides[field]
+                    override, _set_at = self.thermostat_overrides[field]
                     matches = (
                         bool(real) == bool(override)
                         if field == "day_night_mode"
@@ -109,9 +110,13 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
 
     def get_thermostat_value(self, field: str):
         """Hodnota pole termostatu (day_temp/night_temp/day_night_mode):
-        naše nepotvrzená změna > skutečná data ze serveru > výchozí."""
+        naše nepotvrzená (a ještě neprošlá) změna > skutečná data ze
+        serveru > výchozí."""
         if field in self.thermostat_overrides:
-            return self.thermostat_overrides[field]
+            value, set_at = self.thermostat_overrides[field]
+            if time.monotonic() - set_at < OPTIMISTIC_TTL_SECONDS:
+                return value
+            del self.thermostat_overrides[field]
         data_key = self._thermostat_field_map[field]
         real = (self.data or {}).get(data_key)
         if real is not None:
@@ -145,7 +150,9 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
     async def async_write_thermostat_settings(self, **field_updates) -> None:
         """field_updates: libovolná podmnožina day_temp/night_temp/
         day_night_mode - co chybí, doplní se z get_thermostat_value()."""
-        self.thermostat_overrides.update(field_updates)
+        now = time.monotonic()
+        for field, value in field_updates.items():
+            self.thermostat_overrides[field] = (value, now)
 
         thermostat_id = (self.data or {}).get("ThermostatId")
         if not thermostat_id:

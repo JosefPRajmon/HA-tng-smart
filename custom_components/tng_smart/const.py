@@ -25,6 +25,12 @@ CONF_THERMOSTAT_ID = "thermostat_id"
 MIN_THERMOSTAT_TEMP = 10
 MAX_THERMOSTAT_TEMP = 30
 
+# Jak dlouho (v sekundách) věříme naší vlastní odeslané hodnotě, než se
+# vzdáme čekání na potvrzení a začneme znovu důvěřovat datům ze serveru
+# (i kdyby se lišila - třeba proto, že někdo změnil nastavení přímo na
+# webu tngsmart.cz).
+OPTIMISTIC_TTL_SECONDS = 300
+
 # Týdenní rozvrh den/noc pro termostat - zatím napevno podle aktuálního
 # nastavení účtu (24 hodnot na den, True = denní teplota, False = noční).
 # Editace rozvrhu z HA je plánovaná jako budoucí rozšíření.

@@ -8,6 +8,8 @@ HA, kdyby čtení zrovna selhávalo.
 """
 from __future__ import annotations
 
+import time
+
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
@@ -70,7 +72,9 @@ class _TngThermostatTempBase(CoordinatorEntity[TngCoordinator], RestoreEntity, N
         last_state = await self.async_get_last_state()
         if last_state and last_state.state not in (None, "unknown", "unavailable"):
             try:
-                self.coordinator.thermostat_overrides[self._field] = float(last_state.state)
+                self.coordinator.thermostat_overrides[self._field] = (
+                    float(last_state.state), time.monotonic()
+                )
             except ValueError:
                 pass
 

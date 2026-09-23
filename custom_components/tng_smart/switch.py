@@ -2,6 +2,8 @@
 a přepínač režimu den/noc pro termostat."""
 from __future__ import annotations
 
+import time
+
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -9,7 +11,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_HEAT_PUMP_HASH, DOMAIN
+from .const import CONF_HEAT_PUMP_HASH, DOMAIN, OPTIMISTIC_TTL_SECONDS
 from .coordinator import TngCoordinator
 
 
@@ -33,6 +35,7 @@ class TngBoilerSwitch(CoordinatorEntity[TngCoordinator], SwitchEntity):
         # zobrazujeme to, co jsme sami odeslali (žádné blikání zpátky na
         # starou hodnotu kvůli zpoždění na straně čerpadla).
         self._optimistic_state: bool | None = None
+        self._optimistic_state_set_at: float = 0.0
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -45,7 +48,8 @@ class TngBoilerSwitch(CoordinatorEntity[TngCoordinator], SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        if self._optimistic_state is not None:
+        if (self._optimistic_state is not None
+                and time.monotonic() - self._optimistic_state_set_at < OPTIMISTIC_TTL_SECONDS):
             return self._optimistic_state
         return bool(self.coordinator.data.get("BoilerOn"))
 
@@ -58,11 +62,13 @@ class TngBoilerSwitch(CoordinatorEntity[TngCoordinator], SwitchEntity):
 
     async def async_turn_on(self, **kwargs) -> None:
         self._optimistic_state = True
+        self._optimistic_state_set_at = time.monotonic()
         self.async_write_ha_state()
         await self.coordinator.async_write_settings(boiler_on=True)
 
     async def async_turn_off(self, **kwargs) -> None:
         self._optimistic_state = False
+        self._optimistic_state_set_at = time.monotonic()
         self.async_write_ha_state()
         await self.coordinator.async_write_settings(boiler_on=False)
 
@@ -104,7 +110,9 @@ class TngThermostatDayNightSwitch(CoordinatorEntity[TngCoordinator], RestoreEnti
             return
         last_state = await self.async_get_last_state()
         if last_state and last_state.state in ("on", "off"):
-            self.coordinator.thermostat_overrides["day_night_mode"] = last_state.state == "on"
+            self.coordinator.thermostat_overrides["day_night_mode"] = (
+                last_state.state == "on", time.monotonic()
+            )
 
     async def _set(self, value: bool) -> None:
         self._pending = True
