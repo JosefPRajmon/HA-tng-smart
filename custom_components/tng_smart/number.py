@@ -1,9 +1,10 @@
 """Number entity: denní a noční teplota pokojového termostatu.
 
-Termostat (na rozdíl od tepelného čerpadla) nemá žádné API pro čtení
-aktuálního nastavení - hodnoty se jen "pamatují" v Home Assistantu
-(RestoreEntity je obnoví i po restartu) a při každé změně se odešlou
-všechny najednou (den, noc, režim, rozvrh), protože zápis je vše-nebo-nic.
+Skutečné hodnoty se čtou ze stránky MyThermostat (viz
+TngApiClient.get_thermostat_status). Dokud čerpadlo/server nepotvrdí naši
+změnu zpátky, zobrazuje se to, co jsme sami odeslali (coordinator si to
+hlídá přes thermostat_overrides) - RestoreEntity navíc přežije i restart
+HA, kdyby čtení zrovna selhávalo.
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_HEAT_PUMP_HASH, DOMAIN, MAX_THERMOSTAT_TEMP, MIN_THERMOSTAT_TEMP
 from .coordinator import TngCoordinator
@@ -26,18 +28,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     ])
 
 
-class _TngThermostatTempBase(RestoreEntity, NumberEntity):
+class _TngThermostatTempBase(CoordinatorEntity[TngCoordinator], RestoreEntity, NumberEntity):
     _attr_has_entity_name = True
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_native_min_value = MIN_THERMOSTAT_TEMP
     _attr_native_max_value = MAX_THERMOSTAT_TEMP
     _attr_native_step = 0.5
     _attr_mode = NumberMode.BOX
-    _attr_assumed_state = True
-    _state_key: str = ""
+    _field: str = ""
 
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self._entry = entry
         self._pending = False
 
@@ -52,27 +53,32 @@ class _TngThermostatTempBase(RestoreEntity, NumberEntity):
 
     @property
     def available(self) -> bool:
-        return not self._pending
+        return super().available and not self._pending
 
     @property
     def native_value(self) -> float:
-        return self.coordinator.thermostat_state[self._state_key]
+        return self.coordinator.get_thermostat_value(self._field)
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        # Restore je jen záchranná síť pro případ, že by čtení skutečného
+        # stavu ještě neproběhlo - nepřepisuje už jednou přečtená reálná data.
+        if (self.coordinator.data or {}).get(
+            self.coordinator._thermostat_field_map[self._field]
+        ) is not None:
+            return
         last_state = await self.async_get_last_state()
         if last_state and last_state.state not in (None, "unknown", "unavailable"):
             try:
-                self.coordinator.thermostat_state[self._state_key] = float(last_state.state)
+                self.coordinator.thermostat_overrides[self._field] = float(last_state.state)
             except ValueError:
                 pass
 
     async def async_set_native_value(self, value: float) -> None:
         self._pending = True
-        self.coordinator.thermostat_state[self._state_key] = value
         self.async_write_ha_state()
         try:
-            await self.coordinator.async_write_thermostat_settings()
+            await self.coordinator.async_write_thermostat_settings(**{self._field: value})
         finally:
             self._pending = False
             self.async_write_ha_state()
@@ -80,7 +86,7 @@ class _TngThermostatTempBase(RestoreEntity, NumberEntity):
 
 class TngThermostatDayTemp(_TngThermostatTempBase):
     _attr_name = "Termostat - denní teplota"
-    _state_key = "day_temp"
+    _field = "day_temp"
 
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):
         super().__init__(coordinator, entry)
@@ -89,7 +95,7 @@ class TngThermostatDayTemp(_TngThermostatTempBase):
 
 class TngThermostatNightTemp(_TngThermostatTempBase):
     _attr_name = "Termostat - noční teplota"
-    _state_key = "night_temp"
+    _field = "night_temp"
 
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):
         super().__init__(coordinator, entry)

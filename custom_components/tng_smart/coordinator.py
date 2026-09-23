@@ -26,13 +26,20 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
         self.heat_pump_hash = heat_pump_hash
         self.mac_address = mac_address
 
-        # Termostat nemá read API - hodnoty se jen "pamatují" v HA (entity
-        # je obnoví po restartu přes RestoreEntity) a vždy posílají všechny
-        # najednou, protože zápis je "vše nebo nic".
-        self.thermostat_state: dict = {
+        # Termostat: přednostně věříme skutečnému stavu z MyThermostat
+        # (viz get_thermostat_status). "overrides" drží hodnoty, které jsme
+        # sami odeslali a ještě je server/čerpadlo nepotvrdilo zpátky -
+        # jakmile se objeví shoda ve skutečných datech, override zmizí.
+        self.thermostat_overrides: dict = {}
+        self._thermostat_defaults = {
             "day_temp": 20.0,
             "night_temp": 24.0,
             "day_night_mode": False,
+        }
+        self._thermostat_field_map = {
+            "day_temp": "ThermostatDayTemp",
+            "night_temp": "ThermostatNightTemp",
+            "day_night_mode": "ThermostatDayNightMode",
         }
 
     async def _async_update_data(self) -> dict:
@@ -67,7 +74,49 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
             if "tb" in live:
                 status["LiveBoilerTemp"] = live["tb"]
 
+        # Stav termostatu - taky nekritické, pokud selže necháme jen
+        # lokálně zapamatované/výchozí hodnoty (viz get_thermostat_value).
+        thermostat_id = status.get("ThermostatId")
+        if thermostat_id:
+            try:
+                thermo = await self.hass.async_add_executor_job(
+                    self.client.get_thermostat_status, thermostat_id
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Nepodařilo se načíst stav termostatu: %s", err)
+                thermo = None
+
+            if thermo:
+                status.update(thermo)
+                # Jakmile skutečná data dohoní to, co jsme sami odeslali,
+                # přestaneme tu hodnotu vnucovat.
+                for field, data_key in self._thermostat_field_map.items():
+                    if field not in self.thermostat_overrides:
+                        continue
+                    real = thermo.get(data_key)
+                    if real is None:
+                        continue
+                    override = self.thermostat_overrides[field]
+                    matches = (
+                        bool(real) == bool(override)
+                        if field == "day_night_mode"
+                        else abs(float(real) - float(override)) < 0.01
+                    )
+                    if matches:
+                        del self.thermostat_overrides[field]
+
         return status
+
+    def get_thermostat_value(self, field: str):
+        """Hodnota pole termostatu (day_temp/night_temp/day_night_mode):
+        naše nepotvrzená změna > skutečná data ze serveru > výchozí."""
+        if field in self.thermostat_overrides:
+            return self.thermostat_overrides[field]
+        data_key = self._thermostat_field_map[field]
+        real = (self.data or {}).get(data_key)
+        if real is not None:
+            return real
+        return self._thermostat_defaults[field]
 
     def current_write_kwargs(self) -> dict:
         """Poskládá výchozí hodnoty pro zápis z posledního známého stavu -
@@ -93,18 +142,23 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
         )
         await self.async_request_refresh()
 
-    async def async_write_thermostat_settings(self) -> None:
+    async def async_write_thermostat_settings(self, **field_updates) -> None:
+        """field_updates: libovolná podmnožina day_temp/night_temp/
+        day_night_mode - co chybí, doplní se z get_thermostat_value()."""
+        self.thermostat_overrides.update(field_updates)
+
         thermostat_id = (self.data or {}).get("ThermostatId")
         if not thermostat_id:
             raise UpdateFailed("Neznámé ThermostatId - termostat zatím nenačetl data.")
 
-        state = self.thermostat_state
+        day_temp = self.get_thermostat_value("day_temp")
+        night_temp = self.get_thermostat_value("night_temp")
+        day_night_mode = self.get_thermostat_value("day_night_mode")
+
         await self.hass.async_add_executor_job(
             lambda: self.client.write_thermostat_settings(
-                thermostat_id,
-                state["day_temp"],
-                state["night_temp"],
-                state["day_night_mode"],
+                thermostat_id, day_temp, night_temp, day_night_mode,
                 DEFAULT_THERMOSTAT_SCHEDULE,
             )
         )
+        await self.async_request_refresh()

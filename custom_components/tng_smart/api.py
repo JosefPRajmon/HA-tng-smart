@@ -333,6 +333,43 @@ class TngApiClient:
         )
         r.raise_for_status()
 
+    def get_thermostat_status(self, thermostat_id: int) -> dict | None:
+        """Přečte aktuální stav termostatu ze stránky MyThermostat - na
+        rozdíl od tepelného čerpadla (MyInstallations) tahle stránka pro
+        naší session zatím spolehlivě funguje a obsahuje skutečné DayTemp/
+        NightTemp/DayNightEnabled/rozvrh/aktuální teplotu v místnosti.
+        Vrací None (a jen zaloguje debug), pokud se nepovede - volající pak
+        má spadnout zpátky na lokálně zapamatované hodnoty."""
+        self._ensure_login()
+
+        url = f"{BASE_URL}/Pages/Account/MyThermostat?ThermostatId={thermostat_id}"
+        r = self._session.get(url, timeout=15)
+        r.raise_for_status()
+
+        m = re.search(r"var thermostat\s*=\s*(\{.*?\});", r.text, re.S)
+        if not m:
+            _LOGGER.debug(
+                "Nepodařilo se najít proměnnou thermostat. URL: %s, "
+                "status: %s, délka: %d",
+                r.url, r.status_code, len(r.text),
+            )
+            return None
+
+        raw = re.sub(r'"\\/Date\((-?\d+)\)\\/"', r"\1", m.group(1))
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            _LOGGER.debug("Nepodařilo se naparsovat JSON termostatu: %s", raw[:300])
+            return None
+
+        settings = data.get("Settings") or {}
+        return {
+            "ThermostatDayTemp": (settings.get("DayTemperature") or {}).get("FloatValue"),
+            "ThermostatNightTemp": (settings.get("NightTemperature") or {}).get("FloatValue"),
+            "ThermostatDayNightMode": settings.get("DayNightEnabled"),
+            "ThermostatRoomTemp": (data.get("Data") or {}).get("Temperature"),
+        }
+
     def write_thermostat_settings(
         self,
         thermostat_id: int,

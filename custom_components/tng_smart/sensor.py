@@ -35,7 +35,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     if coordinator.data.get("ThermostatId"):
         entities.append(
             TngTempSensor(coordinator, entry, "Teplota v místnosti", "room_temp",
-                          ["LiveRoomTemp", "RoomTemperature"])
+                          ["ThermostatRoomTemp", "LiveRoomTemp", "RoomTemperature"])
         )
 
     async_add_entities(entities)

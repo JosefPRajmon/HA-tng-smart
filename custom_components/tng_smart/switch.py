@@ -67,17 +67,16 @@ class TngBoilerSwitch(CoordinatorEntity[TngCoordinator], SwitchEntity):
         await self.coordinator.async_write_settings(boiler_on=False)
 
 
-class TngThermostatDayNightSwitch(RestoreEntity, SwitchEntity):
-    """Přepínač 'sleduj denní/noční rozvrh' pro termostat. Bez read API -
-    hodnota se jen pamatuje v HA (RestoreEntity) a posílá se vždy spolu
-    s aktuálními denní/noční teplotami a rozvrhem."""
+class TngThermostatDayNightSwitch(CoordinatorEntity[TngCoordinator], RestoreEntity, SwitchEntity):
+    """Přepínač 'sleduj denní/noční rozvrh' pro termostat. Skutečná hodnota
+    se čte z MyThermostat (DayNightEnabled); RestoreEntity je jen záchranná
+    síť, dokud první čtení neproběhne."""
 
     _attr_has_entity_name = True
     _attr_name = "Termostat - režim den/noc"
-    _attr_assumed_state = True
 
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self._entry = entry
         self._pending = False
         self._attr_unique_id = f"{entry.data[CONF_HEAT_PUMP_HASH]}_thermostat_day_night_mode"
@@ -93,24 +92,25 @@ class TngThermostatDayNightSwitch(RestoreEntity, SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return not self._pending
+        return super().available and not self._pending
 
     @property
     def is_on(self) -> bool:
-        return bool(self.coordinator.thermostat_state["day_night_mode"])
+        return bool(self.coordinator.get_thermostat_value("day_night_mode"))
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        if (self.coordinator.data or {}).get("ThermostatDayNightMode") is not None:
+            return
         last_state = await self.async_get_last_state()
         if last_state and last_state.state in ("on", "off"):
-            self.coordinator.thermostat_state["day_night_mode"] = last_state.state == "on"
+            self.coordinator.thermostat_overrides["day_night_mode"] = last_state.state == "on"
 
     async def _set(self, value: bool) -> None:
         self._pending = True
-        self.coordinator.thermostat_state["day_night_mode"] = value
         self.async_write_ha_state()
         try:
-            await self.coordinator.async_write_thermostat_settings()
+            await self.coordinator.async_write_thermostat_settings(day_night_mode=value)
         finally:
             self._pending = False
             self.async_write_ha_state()
