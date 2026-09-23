@@ -346,7 +346,7 @@ class TngApiClient:
         r = self._session.get(url, timeout=15)
         r.raise_for_status()
 
-        m = re.search(r"var thermostat\s*=\s*(\{.*?\});", r.text, re.S)
+        m = re.search(r"\bthermostat\s*=\s*(\{.*?\});", r.text, re.S)
         if not m:
             _LOGGER.debug(
                 "Nepodařilo se najít proměnnou thermostat. URL: %s, "
