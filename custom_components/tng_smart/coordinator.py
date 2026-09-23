@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import TngApiClient, TngApiError, TngAuthError
-from .const import DOMAIN, UPDATE_INTERVAL_SECONDS
+from .const import DOMAIN, UPDATE_INTERVAL_SECONDS, DEFAULT_THERMOSTAT_SCHEDULE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,6 +25,15 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
         self.client = client
         self.heat_pump_hash = heat_pump_hash
         self.mac_address = mac_address
+
+        # Termostat nemá read API - hodnoty se jen "pamatují" v HA (entity
+        # je obnoví po restartu přes RestoreEntity) a vždy posílají všechny
+        # najednou, protože zápis je "vše nebo nic".
+        self.thermostat_state: dict = {
+            "day_temp": 20.0,
+            "night_temp": 24.0,
+            "day_night_mode": False,
+        }
 
     async def _async_update_data(self) -> dict:
         try:
@@ -83,3 +92,19 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
             )
         )
         await self.async_request_refresh()
+
+    async def async_write_thermostat_settings(self) -> None:
+        thermostat_id = (self.data or {}).get("ThermostatId")
+        if not thermostat_id:
+            raise UpdateFailed("Neznámé ThermostatId - termostat zatím nenačetl data.")
+
+        state = self.thermostat_state
+        await self.hass.async_add_executor_job(
+            lambda: self.client.write_thermostat_settings(
+                thermostat_id,
+                state["day_temp"],
+                state["night_temp"],
+                state["day_night_mode"],
+                DEFAULT_THERMOSTAT_SCHEDULE,
+            )
+        )

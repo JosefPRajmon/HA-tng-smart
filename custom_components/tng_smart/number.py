@@ -1,4 +1,10 @@
-"""Number entity: cílová (výstupní) teplota topení domu."""
+"""Number entity: denní a noční teplota pokojového termostatu.
+
+Termostat (na rozdíl od tepelného čerpadla) nemá žádné API pro čtení
+aktuálního nastavení - hodnoty se jen "pamatují" v Home Assistantu
+(RestoreEntity je obnoví i po restartu) a při každé změně se odešlou
+všechny najednou (den, noc, režim, rozvrh), protože zápis je vše-nebo-nic.
+"""
 from __future__ import annotations
 
 from homeassistant.components.number import NumberEntity, NumberMode
@@ -6,46 +12,34 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import CONF_HEAT_PUMP_HASH, DOMAIN, MAX_HEAT_TEMP, MIN_HEAT_TEMP
+from .const import CONF_HEAT_PUMP_HASH, DOMAIN, MAX_THERMOSTAT_TEMP, MIN_THERMOSTAT_TEMP
 from .coordinator import TngCoordinator
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     coordinator: TngCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([TngHeatTempNumber(coordinator, entry)])
+    async_add_entities([
+        TngThermostatDayTemp(coordinator, entry),
+        TngThermostatNightTemp(coordinator, entry),
+    ])
 
 
-class TngHeatTempNumber(CoordinatorEntity[TngCoordinator], NumberEntity):
+class _TngThermostatTempBase(RestoreEntity, NumberEntity):
     _attr_has_entity_name = True
-    _attr_name = "Výstupní teplota topení"
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-    _attr_native_min_value = MIN_HEAT_TEMP
-    _attr_native_max_value = MAX_HEAT_TEMP
-    _attr_native_step = 1
+    _attr_native_min_value = MIN_THERMOSTAT_TEMP
+    _attr_native_max_value = MAX_THERMOSTAT_TEMP
+    _attr_native_step = 0.5
     _attr_mode = NumberMode.BOX
+    _attr_assumed_state = True
+    _state_key: str = ""
 
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):
-        super().__init__(coordinator)
+        self.coordinator = coordinator
         self._entry = entry
         self._pending = False
-        self._attr_unique_id = f"{entry.data[CONF_HEAT_PUMP_HASH]}_heat_temp"
-        self._optimistic_value: float | None = None
-
-    @property
-    def available(self) -> bool:
-        return super().available and not self._pending
-
-    def _handle_coordinator_update(self) -> None:
-        # Jakmile skutečná data ze serveru dohoní naši optimistickou
-        # hodnotu (čerpadlo si vyzvedlo a potvrdilo nové nastavení),
-        # přestaneme ji vnucovat a necháme mluvit real data.
-        if self._optimistic_value is not None:
-            real = self.coordinator.data.get("CurrentHeatingWaterTemp")
-            if real is not None and int(real) == int(self._optimistic_value):
-                self._optimistic_value = None
-        super()._handle_coordinator_update()
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -57,17 +51,46 @@ class TngHeatTempNumber(CoordinatorEntity[TngCoordinator], NumberEntity):
         )
 
     @property
-    def native_value(self) -> float | None:
-        if self._optimistic_value is not None:
-            return self._optimistic_value
-        return self.coordinator.data.get("CurrentHeatingWaterTemp")
+    def available(self) -> bool:
+        return not self._pending
+
+    @property
+    def native_value(self) -> float:
+        return self.coordinator.thermostat_state[self._state_key]
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state and last_state.state not in (None, "unknown", "unavailable"):
+            try:
+                self.coordinator.thermostat_state[self._state_key] = float(last_state.state)
+            except ValueError:
+                pass
 
     async def async_set_native_value(self, value: float) -> None:
         self._pending = True
-        self._optimistic_value = value
+        self.coordinator.thermostat_state[self._state_key] = value
         self.async_write_ha_state()
         try:
-            await self.coordinator.async_write_settings(heat_temp_const=int(round(value)))
+            await self.coordinator.async_write_thermostat_settings()
         finally:
             self._pending = False
             self.async_write_ha_state()
+
+
+class TngThermostatDayTemp(_TngThermostatTempBase):
+    _attr_name = "Termostat - denní teplota"
+    _state_key = "day_temp"
+
+    def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.data[CONF_HEAT_PUMP_HASH]}_thermostat_day_temp"
+
+
+class TngThermostatNightTemp(_TngThermostatTempBase):
+    _attr_name = "Termostat - noční teplota"
+    _state_key = "night_temp"
+
+    def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.data[CONF_HEAT_PUMP_HASH]}_thermostat_night_temp"

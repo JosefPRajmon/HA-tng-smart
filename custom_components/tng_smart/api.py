@@ -333,6 +333,48 @@ class TngApiClient:
         )
         r.raise_for_status()
 
+    def write_thermostat_settings(
+        self,
+        thermostat_id: int,
+        day_temperature: float,
+        night_temperature: float,
+        day_night_mode: bool,
+        schedule: dict,
+    ) -> None:
+        """Zapíše nastavení termostatu (denní/noční teplota, režim den/noc,
+        týdenní rozvrh). Endpoint je klíčovaný přes ThermostatId, ne přes
+        HeatPumpHash/MAC jako u čerpadla."""
+        self._ensure_login()
+
+        if not self._auth_ids or not self._auth_ids.get("UserId"):
+            raise TngApiError(
+                "Chybí přihlašovací identifikátory (UserId/UserIdHash) - "
+                "nejdřív se musí povést alespoň jedno čtení stavu."
+            )
+
+        packet = {
+            "DayTemperature": day_temperature,
+            "NightTemperature": night_temperature,
+            "DayNightMode": day_night_mode,
+            **schedule,
+        }
+
+        url = (
+            f"{BASE_URL}/api/HeatPumpInsertThermostatSettings/"
+            f"{self._auth_ids['UserId']}-{thermostat_id}-"
+            f"{self._auth_ids['UserName']}-{self._auth_ids['UserIdHash']}"
+        )
+
+        r = self._session.post(url, json=packet, timeout=15)
+        _LOGGER.debug(
+            "write_thermostat_settings POST %s -> status %s, tělo: %r, "
+            "packet (bez rozvrhu): DayTemperature=%s NightTemperature=%s "
+            "DayNightMode=%s",
+            url, r.status_code, r.text[:300],
+            day_temperature, night_temperature, day_night_mode,
+        )
+        r.raise_for_status()
+
     def get_status(self, heat_pump_hash: str) -> dict:
         self._ensure_login()
         self._ensure_crossroad_visited()

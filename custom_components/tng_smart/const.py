@@ -20,6 +20,38 @@ MAX_BOILER_TEMP = 60
 MIN_POOL_TEMP = 18
 MAX_POOL_TEMP = 40
 
+CONF_THERMOSTAT_ID = "thermostat_id"
+
+MIN_THERMOSTAT_TEMP = 10
+MAX_THERMOSTAT_TEMP = 30
+
+# Týdenní rozvrh den/noc pro termostat - zatím napevno podle aktuálního
+# nastavení účtu (24 hodnot na den, True = denní teplota, False = noční).
+# Editace rozvrhu z HA je plánovaná jako budoucí rozšíření.
+DEFAULT_THERMOSTAT_SCHEDULE = {
+    "Monday": [False, False, False, False, False, False, True, True, True,
+               False, False, False, False, False, False, False, True, True,
+               True, True, True, True, True, False],
+    "Tuesday": [False, False, False, False, False, False, True, True, True,
+                False, False, False, False, False, False, False, True, True,
+                True, True, True, True, True, False],
+    "Wednesday": [False, False, False, False, False, False, True, True, True,
+                  False, False, False, False, False, False, False, True, True,
+                  True, True, True, True, True, False],
+    "Thursday": [False, False, False, False, False, False, True, True, True,
+                 False, False, False, False, False, False, False, True, True,
+                 True, True, True, True, True, False],
+    "Friday": [False, False, False, False, False, False, True, True, True,
+               False, False, False, False, False, False, False, True, True,
+               True, True, True, True, True, False],
+    "Saturday": [False, False, False, False, False, False, True, True, True,
+                 True, True, True, True, True, True, True, True, True,
+                 True, True, True, True, True, False],
+    "Sunday": [False, False, False, False, False, False, True, True, True,
+               True, True, True, True, True, True, True, True, True,
+               True, True, True, True, True, False],
+}
+
 # Tyhle hodnoty se u tebe (podle zachycených requestů) prakticky nemění -
 # bereme je jako pevné defaulty, ať nemusíme řešit MyInstallations.
 # Pokud si v budoucnu přes web přepneš "Zdroj regulace" nebo "Bivalence",

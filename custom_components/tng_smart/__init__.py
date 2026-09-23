@@ -9,7 +9,13 @@ from .api import TngApiClient
 from .const import CONF_HEAT_PUMP_HASH, CONF_MAC_ADDRESS, DOMAIN
 from .coordinator import TngCoordinator
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.SWITCH, Platform.NUMBER]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.SWITCH,
+    Platform.CLIMATE,
+    Platform.NUMBER,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
