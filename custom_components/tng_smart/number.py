@@ -90,6 +90,7 @@ class _TngThermostatTempBase(CoordinatorEntity[TngCoordinator], RestoreEntity, N
 
 class TngThermostatDayTemp(_TngThermostatTempBase):
     _attr_name = "Termostat - denní teplota"
+    _attr_icon = "mdi:weather-sunny"
     _field = "day_temp"
 
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):
@@ -99,6 +100,7 @@ class TngThermostatDayTemp(_TngThermostatTempBase):
 
 class TngThermostatNightTemp(_TngThermostatTempBase):
     _attr_name = "Termostat - noční teplota"
+    _attr_icon = "mdi:weather-night"
     _field = "night_temp"
 
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):

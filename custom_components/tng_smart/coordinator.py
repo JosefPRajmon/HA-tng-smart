@@ -9,7 +9,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import TngApiClient, TngApiError, TngAuthError
-from .const import DOMAIN, UPDATE_INTERVAL_SECONDS, DEFAULT_THERMOSTAT_SCHEDULE, OPTIMISTIC_TTL_SECONDS
+from .const import (
+    DOMAIN,
+    UPDATE_INTERVAL_SECONDS,
+    OPTIMISTIC_TTL_SECONDS,
+    WEEKDAYS,
+    DEFAULT_SCHEDULE_RANGES,
+)
+from .schedule_utils import hours_from_ranges
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +49,9 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
             "night_temp": "ThermostatNightTemp",
             "day_night_mode": "ThermostatDayNightMode",
         }
+        self._default_schedule_hours = [
+            hours_from_ranges(r) for r in DEFAULT_SCHEDULE_RANGES
+        ]
 
     async def _async_update_data(self) -> dict:
         try:
@@ -106,6 +116,20 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
                     if matches:
                         del self.thermostat_overrides[field]
 
+                # Totéž pro rozvrh (klíč "schedule_0".."schedule_6").
+                real_schedule = thermo.get("ThermostatSchedule")
+                if real_schedule:
+                    for i, day_key in enumerate(WEEKDAYS):
+                        key = f"schedule_{i}"
+                        if key not in self.thermostat_overrides:
+                            continue
+                        real_hours = real_schedule.get(day_key)
+                        if real_hours is None:
+                            continue
+                        override_hours, _set_at = self.thermostat_overrides[key]
+                        if list(real_hours) == list(override_hours):
+                            del self.thermostat_overrides[key]
+
         return status
 
     def get_thermostat_value(self, field: str):
@@ -122,6 +146,24 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
         if real is not None:
             return real
         return self._thermostat_defaults[field]
+
+    def get_thermostat_schedule_day(self, day_index: int) -> list[bool]:
+        """Pole 24 boolů (True = denní teplota) pro daný den (0=Po..6=Ne):
+        naše nepotvrzená změna > skutečná data ze serveru > výchozí."""
+        key = f"schedule_{day_index}"
+        if key in self.thermostat_overrides:
+            value, set_at = self.thermostat_overrides[key]
+            if time.monotonic() - set_at < OPTIMISTIC_TTL_SECONDS:
+                return value
+            del self.thermostat_overrides[key]
+
+        real_schedule = (self.data or {}).get("ThermostatSchedule")
+        if real_schedule:
+            real_hours = real_schedule.get(WEEKDAYS[day_index])
+            if real_hours is not None:
+                return real_hours
+
+        return self._default_schedule_hours[day_index]
 
     def current_write_kwargs(self) -> dict:
         """Poskládá výchozí hodnoty pro zápis z posledního známého stavu -
@@ -153,7 +195,15 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
         now = time.monotonic()
         for field, value in field_updates.items():
             self.thermostat_overrides[field] = (value, now)
+        await self._write_thermostat()
 
+    async def async_write_thermostat_schedule(self, day_index: int, hours: list[bool]) -> None:
+        """Zapíše rozvrh jednoho dne (0=Po..6=Ne), zbylých 6 dní se doplní
+        z aktuálně nejlepší známé hodnoty (viz get_thermostat_schedule_day)."""
+        self.thermostat_overrides[f"schedule_{day_index}"] = (hours, time.monotonic())
+        await self._write_thermostat()
+
+    async def _write_thermostat(self) -> None:
         thermostat_id = (self.data or {}).get("ThermostatId")
         if not thermostat_id:
             raise UpdateFailed("Neznámé ThermostatId - termostat zatím nenačetl data.")
@@ -161,11 +211,13 @@ class TngCoordinator(DataUpdateCoordinator[dict]):
         day_temp = self.get_thermostat_value("day_temp")
         night_temp = self.get_thermostat_value("night_temp")
         day_night_mode = self.get_thermostat_value("day_night_mode")
+        schedule = {
+            WEEKDAYS[i]: self.get_thermostat_schedule_day(i) for i in range(7)
+        }
 
         await self.hass.async_add_executor_job(
             lambda: self.client.write_thermostat_settings(
-                thermostat_id, day_temp, night_temp, day_night_mode,
-                DEFAULT_THERMOSTAT_SCHEDULE,
+                thermostat_id, day_temp, night_temp, day_night_mode, schedule,
             )
         )
         await self.async_request_refresh()

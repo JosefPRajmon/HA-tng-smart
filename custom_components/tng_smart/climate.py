@@ -32,6 +32,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 class TngHeatClimate(CoordinatorEntity[TngCoordinator], ClimateEntity):
     _attr_has_entity_name = True
     _attr_name = "Vytápění domu"
+    _attr_icon = "mdi:heat-pump"
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE

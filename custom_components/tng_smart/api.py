@@ -363,11 +363,24 @@ class TngApiClient:
             return None
 
         settings = data.get("Settings") or {}
+
+        schedule = None
+        day_night_settings = (settings.get("DayNightSettings") or {}).get("Settings")
+        if isinstance(day_night_settings, list) and len(day_night_settings) == 7:
+            weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+                        "Saturday", "Sunday"]
+            schedule = {
+                name: entry.get("Hours")
+                for name, entry in zip(weekdays, day_night_settings)
+                if isinstance(entry, dict) and entry.get("Hours")
+            }
+
         return {
             "ThermostatDayTemp": (settings.get("DayTemperature") or {}).get("FloatValue"),
             "ThermostatNightTemp": (settings.get("NightTemperature") or {}).get("FloatValue"),
             "ThermostatDayNightMode": settings.get("DayNightEnabled"),
             "ThermostatRoomTemp": (data.get("Data") or {}).get("Temperature"),
+            "ThermostatSchedule": schedule,
         }
 
     def write_thermostat_settings(

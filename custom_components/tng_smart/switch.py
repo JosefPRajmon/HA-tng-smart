@@ -26,6 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 class TngBoilerSwitch(CoordinatorEntity[TngCoordinator], SwitchEntity):
     _attr_has_entity_name = True
     _attr_name = "Ohřev bojleru"
+    _attr_icon = "mdi:water-boiler"
 
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):
         super().__init__(coordinator)
@@ -80,6 +81,7 @@ class TngThermostatDayNightSwitch(CoordinatorEntity[TngCoordinator], RestoreEnti
 
     _attr_has_entity_name = True
     _attr_name = "Termostat - režim den/noc"
+    _attr_icon = "mdi:theme-light-dark"
 
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):
         super().__init__(coordinator)

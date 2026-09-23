@@ -31,32 +31,28 @@ MAX_THERMOSTAT_TEMP = 30
 # webu tngsmart.cz).
 OPTIMISTIC_TTL_SECONDS = 300
 
-# Týdenní rozvrh den/noc pro termostat - zatím napevno podle aktuálního
-# nastavení účtu (24 hodnot na den, True = denní teplota, False = noční).
-# Editace rozvrhu z HA je plánovaná jako budoucí rozšíření.
-DEFAULT_THERMOSTAT_SCHEDULE = {
-    "Monday": [False, False, False, False, False, False, True, True, True,
-               False, False, False, False, False, False, False, True, True,
-               True, True, True, True, True, False],
-    "Tuesday": [False, False, False, False, False, False, True, True, True,
-                False, False, False, False, False, False, False, True, True,
-                True, True, True, True, True, False],
-    "Wednesday": [False, False, False, False, False, False, True, True, True,
-                  False, False, False, False, False, False, False, True, True,
-                  True, True, True, True, True, False],
-    "Thursday": [False, False, False, False, False, False, True, True, True,
-                 False, False, False, False, False, False, False, True, True,
-                 True, True, True, True, True, False],
-    "Friday": [False, False, False, False, False, False, True, True, True,
-               False, False, False, False, False, False, False, True, True,
-               True, True, True, True, True, False],
-    "Saturday": [False, False, False, False, False, False, True, True, True,
-                 True, True, True, True, True, True, True, True, True,
-                 True, True, True, True, True, False],
-    "Sunday": [False, False, False, False, False, False, True, True, True,
-               True, True, True, True, True, True, True, True, True,
-               True, True, True, True, True, False],
+WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+WEEKDAY_CZECH_NAMES = {
+    "Monday": "Pondělí",
+    "Tuesday": "Úterý",
+    "Wednesday": "Středa",
+    "Thursday": "Čtvrtek",
+    "Friday": "Pátek",
+    "Saturday": "Sobota",
+    "Sunday": "Neděle",
 }
+
+# Výchozí rozsahy hodin (denní teplota) v pořadí WEEKDAYS, dokud se
+# nenačte/needituje skutečný rozvrh - odvozeno z reálného nastavení účtu.
+DEFAULT_SCHEDULE_RANGES = [
+    "6-8,16-22",  # Po
+    "6-8,16-22",  # Út
+    "6-8,16-22",  # St
+    "6-8,16-22",  # Čt
+    "6-8,16-22",  # Pá
+    "6-22",       # So
+    "6-22",       # Ne
+]
 
 # Tyhle hodnoty se u tebe (podle zachycených requestů) prakticky nemění -
 # bereme je jako pevné defaulty, ať nemusíme řešit MyInstallations.

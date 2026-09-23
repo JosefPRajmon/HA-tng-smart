@@ -18,8 +18,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator: TngCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities(
         [
-            TngOnOffSensor(coordinator, entry, "Vytápění domu", "heating_on", "HeatingOn"),
-            TngOnOffSensor(coordinator, entry, "Ohřev bojleru", "boiler_on", "BoilerOn"),
+            TngOnOffSensor(coordinator, entry, "Vytápění domu", "heating_on", "HeatingOn", "mdi:radiator"),
+            TngOnOffSensor(coordinator, entry, "Ohřev bojleru", "boiler_on", "BoilerOn", "mdi:water-boiler"),
         ]
     )
 
@@ -29,12 +29,14 @@ class TngOnOffSensor(CoordinatorEntity[TngCoordinator], BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.RUNNING
 
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry,
-                 name: str, key: str, data_field: str):
+                 name: str, key: str, data_field: str, icon: str | None = None):
         super().__init__(coordinator)
         self._entry = entry
         self._data_field = data_field
         self._attr_name = name
         self._attr_unique_id = f"{entry.data[CONF_HEAT_PUMP_HASH]}_{key}"
+        if icon:
+            self._attr_icon = icon
 
     @property
     def device_info(self) -> DeviceInfo:

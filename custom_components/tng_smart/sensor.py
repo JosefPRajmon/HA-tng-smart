@@ -25,17 +25,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
     entities: list[SensorEntity] = [
         TngTempSensor(coordinator, entry, "Venkovní teplota", "outside_air",
-                      ["LiveOutsideTemp", "AirTemperature"]),
+                      ["LiveOutsideTemp", "AirTemperature"], "mdi:weather-sunny"),
         TngTempSensor(coordinator, entry, "Teplota vody na výstupu", "water_out",
-                      ["LiveWaterTemp", "CurrentHeatingWaterTemp"]),
+                      ["LiveWaterTemp", "CurrentHeatingWaterTemp"], "mdi:water-thermometer"),
         TngTempSensor(coordinator, entry, "Teplota v bojleru", "boiler_temp",
-                      ["LiveBoilerTemp", "CurrentBoilerTemp"]),
+                      ["LiveBoilerTemp", "CurrentBoilerTemp"], "mdi:water-boiler"),
     ]
 
     if coordinator.data.get("ThermostatId"):
         entities.append(
             TngTempSensor(coordinator, entry, "Teplota v místnosti", "room_temp",
-                          ["ThermostatRoomTemp", "LiveRoomTemp", "RoomTemperature"])
+                          ["ThermostatRoomTemp", "LiveRoomTemp", "RoomTemperature"],
+                          "mdi:home-thermometer")
         )
 
     async_add_entities(entities)
@@ -48,12 +49,14 @@ class TngTempSensor(CoordinatorEntity[TngCoordinator], SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry,
-                 name: str, key: str, data_fields: list[str]):
+                 name: str, key: str, data_fields: list[str], icon: str | None = None):
         super().__init__(coordinator)
         self._entry = entry
         self._data_fields = data_fields
         self._attr_name = name
         self._attr_unique_id = f"{entry.data[CONF_HEAT_PUMP_HASH]}_{key}"
+        if icon:
+            self._attr_icon = icon
 
     @property
     def device_info(self) -> DeviceInfo:
