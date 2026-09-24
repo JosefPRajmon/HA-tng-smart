@@ -7,5 +7,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/JosefPRajmon/HA-tng-smart/issues",
   "requirements": [],
-  "version": "0.9.1"
+  "version": "26.9.1"
 }

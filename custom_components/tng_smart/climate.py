@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 
-from homeassistant.components.climate import ClimateEntity, HVACMode
+from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
@@ -32,7 +32,7 @@ class TngHeatClimate(CoordinatorEntity[TngCoordinator], ClimateEntity):
     _attr_icon = "mdi:heat-pump"
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
-    _attr_supported_features = 0  # jen on/off, žádná teplota
+    _attr_supported_features = ClimateEntityFeature(0)  # jen on/off, žádná teplota
 
     def __init__(self, coordinator: TngCoordinator, entry: ConfigEntry):
         super().__init__(coordinator)
